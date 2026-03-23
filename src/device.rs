@@ -17,10 +17,7 @@ pub fn open() -> Result<HidDevice> {
 ///
 /// Razer devices echo the command back with the status byte set.
 pub fn send(dev: &HidDevice, report: &Report) -> Result<Report> {
-    // The first byte of our buffer is already 0x02 (the report ID), so we
-    // pass the full 64-byte slice directly to hidapi.
-    dev.write(report.as_bytes())
-        .context("HID write failed")?;
+    dev.write(report.as_bytes()).context("HID write failed")?;
 
     let mut buf = [0u8; REPORT_LEN];
     let n = dev

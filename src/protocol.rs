@@ -94,8 +94,8 @@ pub mod cmd {
     /// Note: Synapse exposes a single "Sidetone" slider for this — there is no
     /// separate mic monitoring control on the V3 Pro.
     ///
-    /// GET: class=0x98, id=0x01, args=[0x01]
-    /// SET: class=0x99, id=0x01, args=[level]
+    /// GET: class=0x98, id=0x01, args=[0x01, 0x00]   ← 2 arg bytes required
+    /// SET: class=0x99, id=0x01, args=[level, 0x00]  ← 2 arg bytes required
     pub const SIDETONE_GET_CLASS: u8 = 0x98;
     pub const SIDETONE_SET_CLASS: u8 = 0x99;
     pub const SIDETONE_ID: u8 = 0x01;

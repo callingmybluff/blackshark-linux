@@ -46,11 +46,11 @@ fn cmd_sidetone(dev: &hidapi::HidDevice, level: u8) -> Result<()> {
     use protocol::Report;
 
     // GET current value first (mirrors what Synapse does).
-    let get = Report::new(0x60, cmd::SIDETONE_GET_CLASS, cmd::SIDETONE_ID, &[cmd::SIDETONE_GET_ARG]);
+    let get = Report::new(0x60, cmd::SIDETONE_GET_CLASS, cmd::SIDETONE_ID, &[cmd::SIDETONE_GET_ARG, 0x00]);
     device::send(dev, &get)?;
 
     // SET new value.
-    let set = Report::new(0x60, cmd::SIDETONE_SET_CLASS, cmd::SIDETONE_ID, &[level]);
+    let set = Report::new(0x60, cmd::SIDETONE_SET_CLASS, cmd::SIDETONE_ID, &[level, 0x00]);
     device::send(dev, &set)?;
 
     println!("sidetone set to {level}");
