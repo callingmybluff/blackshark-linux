@@ -1,17 +1,23 @@
 use tokio::sync::{mpsc, oneshot, watch};
 use zbus::interface;
 
+use crate::config::Config;
 use crate::hid_actor::{BatteryState, HidCommand};
 use crate::state::SharedState;
 
 pub struct HeadsetInterface {
-    cmd_tx:   mpsc::Sender<HidCommand>,
-    state_rx: watch::Receiver<SharedState>,
+    cmd_tx:    mpsc::Sender<HidCommand>,
+    state_rx:  watch::Receiver<SharedState>,
+    config_tx: watch::Sender<Config>,
 }
 
 impl HeadsetInterface {
-    pub fn new(cmd_tx: mpsc::Sender<HidCommand>, state_rx: watch::Receiver<SharedState>) -> Self {
-        Self { cmd_tx, state_rx }
+    pub fn new(
+        cmd_tx: mpsc::Sender<HidCommand>,
+        state_rx: watch::Receiver<SharedState>,
+        config_tx: watch::Sender<Config>,
+    ) -> Self {
+        Self { cmd_tx, state_rx, config_tx }
     }
 
     async fn send_cmd<T>(
@@ -27,6 +33,11 @@ impl HeadsetInterface {
             .map_err(|_| zbus::fdo::Error::Failed("HID actor died".into()))?
             .map_err(|e| zbus::fdo::Error::Failed(e.to_string()))
     }
+
+    /// Update one field in the config and trigger a debounced save + apply.
+    fn update_config<F: FnOnce(&mut Config)>(&self, f: F) {
+        self.config_tx.send_modify(f);
+    }
 }
 
 #[interface(name = "net.blackshark1.Headset")]
@@ -37,7 +48,9 @@ impl HeadsetInterface {
             return Err(zbus::fdo::Error::InvalidArgs("level must be 0–15".into()));
         }
         let (tx, rx) = oneshot::channel();
-        self.send_cmd(HidCommand::SetSidetone { level, reply: tx }, rx).await
+        self.send_cmd(HidCommand::SetSidetone { level, reply: tx }, rx).await?;
+        self.update_config(|c| c.sidetone = level);
+        Ok(())
     }
 
     /// Returns (percentage, charging).

@@ -8,6 +8,7 @@ use tracing::{debug, info, warn};
 use blackshark_device as device;
 use blackshark_protocol::{cmd, Report};
 
+use crate::config::Config;
 use crate::state::SharedState;
 
 // ---------------------------------------------------------------------------
@@ -22,6 +23,8 @@ pub struct BatteryState {
 pub enum HidCommand {
     SetSidetone { level: u8, reply: oneshot::Sender<Result<()>> },
     GetBattery  { reply: oneshot::Sender<Result<BatteryState>> },
+    /// Sent when config changes — restores all settings to the device.
+    ApplyConfig { config: Config },
     /// Periodic wakeup sent by a tokio timer — drives reconnect + battery poll.
     Tick,
 }
@@ -36,22 +39,22 @@ const BATTERY_POLL_INTERVAL: Duration = Duration::from_secs(5 * 60);
 ///
 /// `HidDevice` is not `Send`, so all HID I/O stays on this thread.
 /// Communication with async callers is via the mpsc channel + oneshot replies.
-pub fn spawn(rx: mpsc::Receiver<HidCommand>, state_tx: watch::Sender<SharedState>) {
+pub fn spawn(rx: mpsc::Receiver<HidCommand>, state_tx: watch::Sender<SharedState>, initial_config: Config) {
     std::thread::Builder::new()
         .name("hid-actor".into())
-        .spawn(move || run(rx, state_tx))
+        .spawn(move || run(rx, state_tx, initial_config))
         .expect("failed to spawn hid-actor thread");
 }
 
-fn run(mut rx: mpsc::Receiver<HidCommand>, state_tx: watch::Sender<SharedState>) {
-    let mut dev: Option<HidDevice> = try_open(&state_tx);
+fn run(mut rx: mpsc::Receiver<HidCommand>, state_tx: watch::Sender<SharedState>, initial_config: Config) {
+    let mut dev: Option<HidDevice> = try_open(&state_tx, Some(&initial_config));
     let mut next_battery_poll = Instant::now(); // poll immediately on first tick
 
     while let Some(cmd) = rx.blocking_recv() {
         match cmd {
             HidCommand::Tick => {
                 if dev.is_none() {
-                    dev = try_open(&state_tx);
+                    dev = try_open(&state_tx, None);
                 }
                 if Instant::now() >= next_battery_poll {
                     if let Some(d) = &dev {
@@ -102,6 +105,12 @@ fn run(mut rx: mpsc::Receiver<HidCommand>, state_tx: watch::Sender<SharedState>)
                 }
                 let _ = reply.send(result);
             }
+
+            HidCommand::ApplyConfig { config } => {
+                if let Some(d) = &dev {
+                    restore_config(d, &config);
+                }
+            }
         }
     }
 }
@@ -110,7 +119,8 @@ fn run(mut rx: mpsc::Receiver<HidCommand>, state_tx: watch::Sender<SharedState>)
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn try_open(state_tx: &watch::Sender<SharedState>) -> Option<HidDevice> {
+/// Open the device and optionally restore config immediately.
+fn try_open(state_tx: &watch::Sender<SharedState>, config: Option<&Config>) -> Option<HidDevice> {
     match device::open() {
         Ok(d) => {
             let battery  = query_battery(&d).ok();
@@ -122,13 +132,28 @@ fn try_open(state_tx: &watch::Sender<SharedState>) -> Option<HidDevice> {
             );
             state_tx.send_modify(|s| {
                 s.connected = true;
-                if let Some(b) = battery  { s.battery_pct = b.percentage; s.charging = b.charging; }
-                if let Some(v) = sidetone  { s.sidetone = v; }
+                if let Some(b) = &battery  { s.battery_pct = b.percentage; s.charging = b.charging; }
+                if let Some(v) = sidetone   { s.sidetone = v; }
             });
+            if let Some(cfg) = config {
+                restore_config(&d, cfg);
+            }
             Some(d)
         }
         Err(_) => None,
     }
+}
+
+/// Apply all config values to the device. Logs but does not fail on errors —
+/// best-effort restore so a single bad command doesn't block the rest.
+fn restore_config(dev: &HidDevice, config: &Config) {
+    info!(sidetone = config.sidetone, "restoring config to device");
+
+    if let Err(e) = set_sidetone(dev, config.sidetone) {
+        warn!("restore sidetone failed: {e}");
+    }
+    // Additional settings (EQ, THX, ANC, power savings) will be added here
+    // as those commands are implemented.
 }
 
 /// Run `f` with the current device, clearing it on I/O failure.
