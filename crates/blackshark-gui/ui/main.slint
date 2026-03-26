@@ -187,6 +187,56 @@ component MicTab inherits VerticalBox {
 }
 
 // ---------------------------------------------------------------------------
+// Audio tab
+// ---------------------------------------------------------------------------
+
+component AudioTab inherits VerticalBox {
+    in property <bool> connected;
+    in property <int>  eq-preset;
+    callback set-eq(int);
+
+    padding: 24px;
+    spacing: 16px;
+
+    GroupBox {
+        title: "EQ Preset";
+        VerticalBox {
+            spacing: 8px;
+            Text {
+                text: "Select a preset. Custom band editing coming soon.";
+                color: Palette.foreground;
+                font-size: 11px;
+            }
+
+            HorizontalBox {
+                spacing: 8px;
+                for name[i] in ["Flat", "Preset 1", "Preset 2", "Preset 3", "Preset 4"]: Button {
+                    text: name;
+                    enabled: connected;
+                    primary: eq-preset == i;
+                    clicked => { set-eq(i); }
+                }
+            }
+
+            Text {
+                text: {
+                    eq-preset == 0 ? "Flat — no EQ" :
+                    eq-preset == 1 ? "Bass and mid boost (+2, +2, +5, +5, +1, -1, +2, +3, +3)" :
+                    eq-preset == 2 ? "V-shape: boosted bass and treble, scooped mids" :
+                    eq-preset == 3 ? "Slight scoop: mild bass boost, reduced harshness" :
+                    eq-preset == 4 ? "Presence boost: lifted highs and upper-mids" : ""
+                };
+                color: Palette.foreground;
+                font-size: 11px;
+                wrap: word-wrap;
+            }
+        }
+    }
+
+    Rectangle { vertical-stretch: 1; }
+}
+
+// ---------------------------------------------------------------------------
 // Stub tab
 // ---------------------------------------------------------------------------
 
@@ -220,6 +270,7 @@ export component MainWindow inherits Window {
     in property <bool>   connected;
     in property <int>    battery-pct;
     in property <bool>   charging;
+    in property <int>    eq-preset;
     in property <int>    sidetone;
     in property <bool>   thx-enabled;
     in property <bool>   anc-enabled;
@@ -227,6 +278,7 @@ export component MainWindow inherits Window {
     in property <int>    power-savings;
 
     // Callbacks → Rust
+    callback set-eq(int);
     callback set-sidetone(int);
     callback set-thx(bool);
     callback set-anc(bool, int);
@@ -286,7 +338,12 @@ export component MainWindow inherits Window {
             set-power-savings(m) => { set-power-savings(m); }
             horizontal-stretch: 1;
         }
-        if active-tab == 1: StubTab { name: "Audio / EQ"; horizontal-stretch: 1; }
+        if active-tab == 1: AudioTab {
+            connected: connected;
+            eq-preset: eq-preset;
+            set-eq(p) => { set-eq(p); }
+            horizontal-stretch: 1;
+        }
         if active-tab == 2: MicTab {
             connected: connected;
             sidetone:  sidetone;

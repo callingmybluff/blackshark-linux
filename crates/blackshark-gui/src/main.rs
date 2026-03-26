@@ -20,6 +20,7 @@ async fn main() -> Result<()> {
             window.set_connected(connected);
             if connected {
                 window.set_battery_pct(proxy.battery_percentage().await.unwrap_or(0) as i32);
+                window.set_eq_preset(proxy.eq_preset().await.unwrap_or(0) as i32);
                 window.set_sidetone(proxy.sidetone().await.unwrap_or(0) as i32);
                 window.set_thx_enabled(proxy.thx_enabled().await.unwrap_or(false));
                 window.set_anc_enabled(proxy.anc_enabled().await.unwrap_or(false));
@@ -30,6 +31,18 @@ async fn main() -> Result<()> {
     }
 
     // Wire up callbacks
+    {
+        let conn = conn.clone();
+        window.on_set_eq(move |preset| {
+            let conn = conn.clone();
+            tokio::spawn(async move {
+                if let Ok(proxy) = HeadsetProxy::new(&conn).await {
+                    let _ = proxy.set_eq(preset as u8).await;
+                }
+            });
+        });
+    }
+
     {
         let conn = conn.clone();
         window.on_set_sidetone(move |level| {
@@ -88,7 +101,8 @@ async fn main() -> Result<()> {
 
             let mut battery_stream   = proxy.receive_battery_changed().await.ok();
             let mut connected_stream = proxy.receive_connected_changed().await;
-            let mut sidetone_stream  = proxy.receive_sidetone_changed().await;
+            let mut eq_stream        = proxy.receive_eq_preset_changed().await;
+        let mut sidetone_stream  = proxy.receive_sidetone_changed().await;
             let mut thx_stream       = proxy.receive_thx_enabled_changed().await;
             let mut anc_stream       = proxy.receive_anc_enabled_changed().await;
         let mut anc_level_stream = proxy.receive_anc_level_changed().await;
@@ -114,6 +128,14 @@ async fn main() -> Result<()> {
                             let w = window_weak.clone();
                             slint::invoke_from_event_loop(move || {
                                 if let Some(win) = w.upgrade() { win.set_connected(val); }
+                            }).ok();
+                        }
+                    }
+                    Some(change) = eq_stream.next() => {
+                        if let Ok(val) = change.get().await {
+                            let w = window_weak.clone();
+                            slint::invoke_from_event_loop(move || {
+                                if let Some(win) = w.upgrade() { win.set_eq_preset(val as i32); }
                             }).ok();
                         }
                     }
