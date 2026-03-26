@@ -94,8 +94,8 @@ impl Tray for BlacksharkTray {
                 submenu: (0u8..=15)
                     .map(|lvl| {
                         MenuItem::Standard(StandardItem {
-                            label:     format!("{lvl}"),
-                            icon_name: if lvl == sidetone { "object-select" } else { "" }.into(),
+                            label:     if lvl == sidetone { format!("• {lvl}") } else { format!("  {lvl}") },
+                            icon_name: String::new(),
                             activate:  Box::new(move |tray: &mut Self| {
                                 let conn = tray.conn.clone();
                                 tray.rt.spawn(async move {
@@ -108,6 +108,7 @@ impl Tray for BlacksharkTray {
                         })
                     })
                     .collect(),
+
                 ..Default::default()
             }));
 
@@ -149,10 +150,11 @@ impl Tray for BlacksharkTray {
                 submenu: [0u8, 15, 30, 45, 60]
                     .iter()
                     .map(|&m| {
-                        let label = if m == 0 { "Off".into() } else { format!("{m} min") };
+                        let base = if m == 0 { "Off".into() } else { format!("{m} min") };
+                        let label = if m == ps { format!("• {base}") } else { format!("  {base}") };
                         MenuItem::Standard(StandardItem {
                             label,
-                            icon_name: if m == ps { "object-select" } else { "" }.into(),
+                            icon_name: String::new(),
                             activate:  Box::new(move |tray: &mut Self| {
                                 let conn = tray.conn.clone();
                                 tray.rt.spawn(async move {
