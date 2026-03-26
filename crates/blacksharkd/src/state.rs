@@ -4,6 +4,7 @@ pub struct SharedState {
     pub battery_pct: u8,
     pub charging: bool,
     pub sidetone: u8,
+    pub eq_preset: u8,
     pub thx_enabled: bool,
     pub anc_enabled: bool,
     pub anc_level: u8,

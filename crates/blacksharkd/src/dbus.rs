@@ -72,6 +72,17 @@ impl HeadsetInterface {
         Ok(())
     }
 
+    /// Set EQ preset (0–8). Preset 0 = flat.
+    async fn set_eq(&self, preset: u8) -> zbus::fdo::Result<()> {
+        if preset >= 9 {
+            return Err(zbus::fdo::Error::InvalidArgs("preset must be 0–8".into()));
+        }
+        let (tx, rx) = oneshot::channel();
+        self.send_cmd(HidCommand::SetEq { preset, reply: tx }, rx).await?;
+        self.update_config(|c| c.eq_preset = preset);
+        Ok(())
+    }
+
     /// Set power savings timeout. minutes = 0 (off), 15, 30, 45, or 60.
     async fn set_power_savings(&self, minutes: u8) -> zbus::fdo::Result<()> {
         if ![0u8, 15, 30, 45, 60].contains(&minutes) {
@@ -106,6 +117,11 @@ impl HeadsetInterface {
     #[zbus(property)]
     async fn sidetone(&self) -> u8 {
         self.state_rx.borrow().sidetone
+    }
+
+    #[zbus(property)]
+    async fn eq_preset(&self) -> u8 {
+        self.state_rx.borrow().eq_preset
     }
 
     #[zbus(property)]

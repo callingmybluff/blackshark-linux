@@ -21,11 +21,12 @@ pub struct BatteryState {
 }
 
 pub enum HidCommand {
-    SetSidetone     { level: u8,             reply: oneshot::Sender<Result<()>> },
-    GetBattery      {                         reply: oneshot::Sender<Result<BatteryState>> },
-    SetThx          { enabled: bool,          reply: oneshot::Sender<Result<()>> },
+    SetSidetone     { level: u8,               reply: oneshot::Sender<Result<()>> },
+    GetBattery      {                           reply: oneshot::Sender<Result<BatteryState>> },
+    SetThx          { enabled: bool,            reply: oneshot::Sender<Result<()>> },
     SetAnc          { enabled: bool, level: u8, reply: oneshot::Sender<Result<()>> },
-    SetPowerSavings { minutes: u8,            reply: oneshot::Sender<Result<()>> },
+    SetPowerSavings { minutes: u8,              reply: oneshot::Sender<Result<()>> },
+    SetEq           { preset: u8,              reply: oneshot::Sender<Result<()>> },
     /// Sent when config changes — restores all settings to the device.
     ApplyConfig { config: Config },
     /// Periodic wakeup sent by a tokio timer — drives reconnect + battery poll.
@@ -155,6 +156,19 @@ fn run(mut rx: mpsc::Receiver<HidCommand>, state_tx: watch::Sender<SharedState>,
                 let _ = reply.send(result);
             }
 
+            HidCommand::SetEq { preset, reply } => {
+                info!(preset, "set_eq");
+                let result = with_dev(&mut dev, &state_tx, |d| set_eq_preset(d, preset));
+                match &result {
+                    Ok(()) => {
+                        info!(preset, "set_eq ok");
+                        state_tx.send_modify(|s| s.eq_preset = preset);
+                    }
+                    Err(e) => warn!("set_eq failed: {e}"),
+                }
+                let _ = reply.send(result);
+            }
+
             HidCommand::GetBattery { reply } => {
                 info!("get_battery");
                 let result = with_dev(&mut dev, &state_tx, query_battery);
@@ -230,7 +244,11 @@ fn restore_config(dev: &HidDevice, config: &Config) {
     if let Err(e) = set_sidetone(dev, config.sidetone) {
         warn!("restore sidetone failed: {e}");
     }
-    // TODO: restore THX/ANC/power_savings once confirmed they don't time out on restore
+    if config.eq_preset > 0 {
+        if let Err(e) = set_eq_preset(dev, config.eq_preset) {
+            warn!("restore eq failed: {e}");
+        }
+    }
 }
 
 /// Run `f` with the current device, clearing it on I/O failure.
@@ -295,6 +313,68 @@ fn set_power_savings(dev: &HidDevice, minutes: u8) -> Result<()> {
     let report = Report::new(0x60, cmd::POWER_SAVINGS_CLASS, cmd::POWER_SAVINGS_ID,
                              &[minutes, 0x00]);
     device::send(dev, &report)?;
+    Ok(())
+}
+
+/// Band data per preset (confirmed from Synapse pcap captures).
+/// Format: [preset_idx, b0..b8, extra, padding] — 12 bytes total.
+/// Band values use sign-magnitude encoding: 0x00=0dB, 0x01=+1dB, 0x81=−1dB.
+/// Bands: 60Hz, 170Hz, 310Hz, 600Hz, 1kHz, 3kHz, 6kHz, 12kHz, 16kHz.
+const EQ_BANDS: [[u8; 12]; 5] = [
+    [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], // 0: Flat
+    [0x01, 0x02, 0x02, 0x05, 0x05, 0x01, 0x81, 0x02, 0x03, 0x03, 0x03, 0x00], // 1
+    [0x02, 0x03, 0x03, 0x03, 0x81, 0x84, 0x84, 0x02, 0x03, 0x03, 0x03, 0x00], // 2
+    [0x03, 0x02, 0x02, 0x00, 0x00, 0x01, 0x81, 0x81, 0x03, 0x03, 0x03, 0x00], // 3
+    [0x04, 0x01, 0x01, 0x81, 0x00, 0x02, 0x00, 0x04, 0x04, 0x04, 0x83, 0x00], // 4
+];
+
+/// Meta args per preset (7 bytes, from captures).
+const EQ_META: [[u8; 7]; 5] = [
+    [0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00],
+    [0x01, 0x01, 0x01, 0x00, 0x01, 0x00, 0x00],
+    [0x02, 0x03, 0x01, 0x00, 0x03, 0x00, 0x00],
+    [0x03, 0x02, 0x01, 0x00, 0x02, 0x00, 0x00],
+    [0x04, 0x04, 0x01, 0x00, 0x0b, 0x00, 0x00],
+];
+
+/// Commit args per preset (12 bytes, from captures).
+const EQ_COMMIT: [[u8; 12]; 5] = [
+    [0x00, 0x00, 0x00, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+    [0x01, 0x00, 0x00, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+    [0x02, 0x00, 0x00, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+    [0x03, 0x00, 0x00, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+    [0x04, 0x00, 0x00, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+];
+
+fn set_eq_preset(dev: &HidDevice, preset: u8) -> Result<()> {
+    anyhow::ensure!(preset < cmd::EQ_PRESET_COUNT, "preset index out of range (0–8)");
+
+    // Only presets 0–4 have captured data; 5–8 use flat band data with their index.
+    let idx = preset as usize;
+    let (bands, meta, commit) = if idx < EQ_BANDS.len() {
+        (EQ_BANDS[idx], EQ_META[idx], EQ_COMMIT[idx])
+    } else {
+        let mut b = EQ_BANDS[0]; b[0] = preset;
+        let mut m = EQ_META[0];  m[0] = preset;
+        let mut c = EQ_COMMIT[0]; c[0] = preset;
+        (b, m, c)
+    };
+
+    // 1. GET current state
+    device::send(dev, &Report::new(0x60, cmd::EQ_STATE_CLASS, cmd::EQ_STATE_ID, &[0x01, 0x00]))?;
+
+    // 2. SET bands
+    device::send(dev, &Report::new(0x60, cmd::EQ_BANDS_CLASS, cmd::EQ_BANDS_ID, &bands))?;
+
+    // 3. SET meta
+    device::send(dev, &Report::new(0x60, cmd::EQ_META_CLASS, cmd::EQ_META_ID, &meta))?;
+
+    // 4. APPLY
+    device::send(dev, &Report::new(0x60, cmd::EQ_STATE_CLASS, cmd::EQ_STATE_ID, &[0x02, 0x00]))?;
+
+    // 5. COMMIT
+    device::send(dev, &Report::new(0x60, cmd::EQ_COMMIT_CLASS, cmd::EQ_COMMIT_ID, &commit))?;
+
     Ok(())
 }
 

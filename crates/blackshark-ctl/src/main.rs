@@ -15,6 +15,11 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Set EQ preset (0=flat, 1-4 confirmed presets, 5-8 flat with index)
+    Eq {
+        #[arg(value_name = "PRESET", value_parser = clap::value_parser!(u8).range(0..=8))]
+        preset: u8,
+    },
     /// Set sidetone level (0–15)
     Sidetone {
         #[arg(value_name = "LEVEL", value_parser = clap::value_parser!(u8).range(0..=15))]
@@ -68,6 +73,10 @@ async fn main() -> Result<()> {
     }
 
     match cli.command {
+        Command::Eq { preset } => {
+            proxy.set_eq(preset).await?;
+            println!("EQ preset set to {preset}");
+        }
         Command::Sidetone { level } => {
             proxy.set_sidetone(level).await?;
             println!("sidetone set to {level}");
@@ -105,6 +114,7 @@ async fn main() -> Result<()> {
 struct Status {
     connected: bool,
     battery_percentage: u8,
+    eq_preset: u8,
     sidetone: u8,
     thx_enabled: bool,
     anc_enabled: bool,
@@ -116,6 +126,7 @@ async fn cmd_status(proxy: &HeadsetProxy<'_>) -> Result<()> {
     let status = Status {
         connected:             proxy.connected().await?,
         battery_percentage:    proxy.battery_percentage().await?,
+        eq_preset:             proxy.eq_preset().await?,
         sidetone:              proxy.sidetone().await?,
         thx_enabled:           proxy.thx_enabled().await?,
         anc_enabled:           proxy.anc_enabled().await?,

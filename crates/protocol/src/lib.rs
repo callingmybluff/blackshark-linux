@@ -106,11 +106,20 @@ pub mod cmd {
     pub const SIDETONE_GET_ARG: u8 = 0x01;
     pub const SIDETONE_MAX: u8 = 0x0f;
 
-    /// EQ preset activation — 5-command sequence per preset switch.
-    /// Preset index 0x00–0x04 in args[0].
-    /// TODO: document full EQ band encoding once implemented.
-    pub const EQ_STATE_CLASS_GET: u8 = 0xe1;
-    pub const EQ_STATE_CLASS_SET: u8 = 0xe1;
+    /// EQ — 5-command sequence per preset switch (confirmed from pcap).
+    ///
+    /// Band values use sign-magnitude encoding:
+    ///   0x00 = 0dB, 0x01 = +1dB, 0x81 = −1dB, 0x84 = −4dB
+    /// 9 bands: 60, 170, 310, 600, 1k, 3k, 6k, 12k, 16k Hz
+    /// 9 preset slots (index 0–8). Preset 0 = flat.
+    ///
+    /// Sequence:
+    ///   1. GET  cls=0xe1 id=0x01 args=[0x01, 0x00]
+    ///   2. SET  cls=0x95 id=0x0b args=[preset_idx, b0..b9, 0x00]  (12 bytes)
+    ///   3. META cls=0xe0 id=0x06 args=[preset_idx, ...]            (7 bytes)
+    ///   4. APPLY cls=0xe1 id=0x01 args=[0x02, 0x00]
+    ///   5. COMMIT cls=0xeb id=0x0b args=[preset_idx, ...]          (12 bytes)
+    pub const EQ_STATE_CLASS: u8 = 0xe1;
     pub const EQ_STATE_ID: u8 = 0x01;
     pub const EQ_BANDS_CLASS: u8 = 0x95;
     pub const EQ_BANDS_ID: u8 = 0x0b;
@@ -118,6 +127,7 @@ pub mod cmd {
     pub const EQ_META_ID: u8 = 0x06;
     pub const EQ_COMMIT_CLASS: u8 = 0xeb;
     pub const EQ_COMMIT_ID: u8 = 0x0b;
+    pub const EQ_PRESET_COUNT: u8 = 9;
 
     /// Battery level query (confirmed from startup pcap).
     ///
