@@ -64,6 +64,7 @@ component DeviceTab inherits ScrollView {
     width: parent.viewport-width;
     padding: 24px;
     spacing: 16px;
+    alignment: start;
 
     // Connection + battery
     GroupBox {
@@ -168,6 +169,7 @@ component MicTab inherits ScrollView {
     width: parent.viewport-width;
     padding: 24px;
     spacing: 16px;
+    alignment: start;
 
     GroupBox {
         title: "Sidetone";
@@ -212,6 +214,7 @@ component AudioTab inherits ScrollView {
     width: parent.viewport-width;
     padding: 24px;
     spacing: 16px;
+    alignment: start;
 
     GroupBox {
         title: "EQ Preset";
@@ -271,6 +274,7 @@ component RoutingTab inherits ScrollView {
     width: parent.viewport-width;
     padding: 24px;
     spacing: 16px;
+    alignment: start;
 
     // Game / Chat mix
     if connected: GroupBox {
@@ -426,6 +430,7 @@ component AdvancedTab inherits ScrollView {
     width: parent.viewport-width;
     padding: 24px;
     spacing: 16px;
+    alignment: start;
 
     GroupBox {
         title: "Daemon (blacksharkd)";
