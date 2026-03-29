@@ -1,3 +1,16 @@
+/// Display names for EQ presets 0–8, matching the Synapse preset order.
+pub const EQ_PRESET_NAMES: [&str; 9] = [
+    "Default",
+    "Game",
+    "Movie",
+    "Music",
+    "Counter-Strike 2",
+    "Valorant",
+    "Fortnite",
+    "Call of Duty",
+    "Apex Legends",
+];
+
 /// Typed D-Bus proxy for the blacksharkd Headset interface.
 ///
 /// zbus generates the implementation from this trait definition —
@@ -8,12 +21,8 @@
     default_path = "/net/blackshark1/Headset"
 )]
 pub trait Headset {
-    /// Set EQ preset (0–4).
+    /// Set EQ preset (0–8). Preset 0 = flat.
     fn set_eq(&self, preset: u8) -> zbus::Result<()>;
-
-    /// Current EQ preset.
-    #[zbus(property)]
-    fn eq_preset(&self) -> zbus::Result<u8>;
 
     /// Set sidetone level (0–15).
     fn set_sidetone(&self, level: u8) -> zbus::Result<()>;
@@ -21,14 +30,32 @@ pub trait Headset {
     /// Enable or disable THX Spatial Audio.
     fn set_thx(&self, enabled: bool) -> zbus::Result<()>;
 
-    /// Set Active Noise Cancellation (level 1–4).
+    /// Set Active Noise Cancellation. level must be 1–4.
     fn set_anc(&self, enabled: bool, level: u8) -> zbus::Result<()>;
 
-    /// Set power savings timeout (0=off, 15, 30, 45, 60 minutes).
+    /// Set power savings auto-shutoff. minutes: 0 (off), 15, 30, 45, or 60.
     fn set_power_savings(&self, minutes: u8) -> zbus::Result<()>;
 
     /// Returns (percentage, charging).
     fn get_battery(&self) -> zbus::Result<(u8, bool)>;
+
+    /// Set game/chat crossfader (0 = all chat, 50 = equal, 100 = all game).
+    fn set_game_chat_mix(&self, mix: u8) -> zbus::Result<()>;
+
+    /// List non-loopback sink-inputs currently playing.
+    /// Returns Vec of (sink_input_id, app_name, route) where route is
+    /// "game", "chat", or "" for unassigned.
+    async fn list_sink_inputs(&self) -> zbus::Result<Vec<(u32, String, String)>>;
+
+    /// Assign a sink-input's app to game or chat routing, persisting the rule.
+    /// route = "game", "chat", or "" to clear.
+    async fn set_sink_input_route(&self, sink_input_id: u32, route: &str) -> zbus::Result<()>;
+
+    /// Return all saved app routing rules as Vec of (app_name, route).
+    async fn get_app_routes(&self) -> zbus::Result<Vec<(String, String)>>;
+
+    /// Remove a saved app routing rule by app name.
+    async fn remove_app_route(&self, app_name: &str) -> zbus::Result<()>;
 
     /// Whether the headset is currently reachable.
     #[zbus(property)]
@@ -43,6 +70,9 @@ pub trait Headset {
     fn sidetone(&self) -> zbus::Result<u8>;
 
     #[zbus(property)]
+    fn eq_preset(&self) -> zbus::Result<u8>;
+
+    #[zbus(property)]
     fn thx_enabled(&self) -> zbus::Result<bool>;
 
     #[zbus(property)]
@@ -53,6 +83,9 @@ pub trait Headset {
 
     #[zbus(property)]
     fn power_savings_minutes(&self) -> zbus::Result<u8>;
+
+    #[zbus(property)]
+    fn game_chat_mix(&self) -> zbus::Result<u8>;
 
     /// Emitted when the battery level changes.
     #[zbus(signal)]

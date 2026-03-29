@@ -1,10 +1,7 @@
-mod proxy;
-
 use anyhow::Result;
+use blackshark_client::HeadsetProxy;
 use slint::{ComponentHandle, ModelRc, VecModel};
 use zbus::Connection;
-
-use proxy::HeadsetProxy;
 
 slint::include_modules!();
 

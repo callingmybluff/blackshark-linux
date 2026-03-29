@@ -2,6 +2,7 @@
 members = [
     "crates/protocol",
     "crates/device",
+    "crates/blackshark-client",
     "crates/blackshark-ctl",
     "crates/blacksharkd",
     "crates/blackshark-tray",

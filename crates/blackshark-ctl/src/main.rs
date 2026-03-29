@@ -3,8 +3,7 @@ use clap::{Parser, Subcommand};
 use serde::Serialize;
 use zbus::Connection;
 
-mod proxy;
-use proxy::HeadsetProxy;
+use blackshark_client::HeadsetProxy;
 
 #[derive(Parser)]
 #[command(name = "blackshark-ctl", about = "Control the Razer BlackShark V3 Pro headset")]

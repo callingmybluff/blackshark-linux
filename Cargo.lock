@@ -626,10 +626,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "blackshark-client"
+version = "0.1.0"
+dependencies = [
+ "zbus 4.4.0",
+]
+
+[[package]]
 name = "blackshark-ctl"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "blackshark-client",
  "clap 4.6.0",
  "futures-util",
  "serde",
@@ -652,6 +660,7 @@ name = "blackshark-gui"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "blackshark-client",
  "futures-util",
  "slint",
  "slint-build",
@@ -668,6 +677,7 @@ name = "blackshark-tray"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "blackshark-client",
  "futures-util",
  "ksni",
  "tokio",

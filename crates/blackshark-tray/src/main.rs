@@ -1,28 +1,9 @@
-mod proxy;
-
 use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
+use blackshark_client::{EQ_PRESET_NAMES, HeadsetProxy};
 use ksni::{self, menu::*, Icon, Tray};
 use zbus::Connection;
-
-use proxy::HeadsetProxy;
-
-// ---------------------------------------------------------------------------
-// Shared state
-// ---------------------------------------------------------------------------
-
-const EQ_PRESET_NAMES: [&str; 9] = [
-    "Default",
-    "Game",
-    "Movie",
-    "Music",
-    "Counter-Strike 2",
-    "Valorant",
-    "Fortnite",
-    "Call of Duty",
-    "Apex Legends",
-];
 
 #[derive(Clone, Debug, Default)]
 struct HeadsetState {
