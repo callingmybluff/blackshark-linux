@@ -9,8 +9,6 @@ pub struct SharedState {
     pub anc_enabled: bool,
     pub anc_level: u8,
     pub power_savings_minutes: u8,
-    /// Game/chat crossfader: 0 = all chat, 50 = equal, 100 = all game.
-    pub game_chat_mix: u8,
 }
 
 impl Default for SharedState {
@@ -25,7 +23,6 @@ impl Default for SharedState {
             anc_enabled:           false,
             anc_level:             1,
             power_savings_minutes: 0,
-            game_chat_mix:         50,
         }
     }
 }

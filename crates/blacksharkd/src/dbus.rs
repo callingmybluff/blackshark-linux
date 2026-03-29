@@ -1,14 +1,13 @@
 use tokio::sync::{mpsc, oneshot, watch};
 use zbus::interface;
 
-use crate::config::{AppRoute, Config};
+use crate::config::Config;
 use crate::hid_actor::{BatteryState, HidCommand};
 use crate::state::SharedState;
 
 pub struct HeadsetInterface {
     cmd_tx:    mpsc::Sender<HidCommand>,
     state_rx:  watch::Receiver<SharedState>,
-    state_tx:  watch::Sender<SharedState>,
     config_tx: watch::Sender<Config>,
 }
 
@@ -16,10 +15,10 @@ impl HeadsetInterface {
     pub fn new(
         cmd_tx:    mpsc::Sender<HidCommand>,
         state_rx:  watch::Receiver<SharedState>,
-        state_tx:  watch::Sender<SharedState>,
+        _state_tx: watch::Sender<SharedState>,
         config_tx: watch::Sender<Config>,
     ) -> Self {
-        Self { cmd_tx, state_rx, state_tx, config_tx }
+        Self { cmd_tx, state_rx, config_tx }
     }
 
     async fn send_cmd<T>(
@@ -144,81 +143,6 @@ impl HeadsetInterface {
     #[zbus(property)]
     async fn power_savings_minutes(&self) -> u8 {
         self.state_rx.borrow().power_savings_minutes
-    }
-
-    /// Set game/chat crossfader (0 = all chat, 50 = equal, 100 = all game).
-    async fn set_game_chat_mix(&self, mix: u8) -> zbus::fdo::Result<()> {
-        if mix > 100 {
-            return Err(zbus::fdo::Error::InvalidArgs("mix must be 0–100".into()));
-        }
-        self.state_tx.send_modify(|s| s.game_chat_mix = mix);
-        self.update_config(|c| c.game_chat_mix = mix);
-        crate::pipewire::apply_mix_volumes(mix).await;
-        Ok(())
-    }
-
-    #[zbus(property)]
-    async fn game_chat_mix(&self) -> u8 {
-        self.state_rx.borrow().game_chat_mix
-    }
-
-    /// List all non-loopback sink-inputs currently playing.
-    /// Returns Vec of (sink_input_id, app_name, route) where route is
-    /// "game", "chat", or "" for unassigned.
-    async fn list_sink_inputs(&self) -> zbus::fdo::Result<Vec<(u32, String, String)>> {
-        let inputs = crate::pipewire::list_sink_inputs().await;
-        Ok(inputs.into_iter().map(|s| (s.id, s.app_name, s.route)).collect())
-    }
-
-    /// Assign a sink-input's app to game or chat routing, persisting the rule.
-    /// route = "game", "chat", or "" to clear the rule.
-    async fn set_sink_input_route(&self, sink_input_id: u32, route: String) -> zbus::fdo::Result<()> {
-        // Find the app name for this sink-input.
-        let inputs = crate::pipewire::list_sink_inputs().await;
-        let Some(input) = inputs.iter().find(|s| s.id == sink_input_id) else {
-            return Err(zbus::fdo::Error::InvalidArgs("sink-input not found".into()));
-        };
-        let app_name = input.app_name.clone();
-        let sink_name = match route.as_str() {
-            "game" => "blackshark-game",
-            "chat" => "blackshark-chat",
-            "" => {
-                // Clear rule — move back to default headset output.
-                self.update_config(|c| { c.app_routing.remove(&app_name); });
-                if let Some(headset) = crate::pipewire::find_headset_sink().await {
-                    crate::pipewire::move_sink_input(sink_input_id, &headset).await;
-                }
-                return Ok(());
-            }
-            _ => return Err(zbus::fdo::Error::InvalidArgs("route must be 'game', 'chat', or ''".into())),
-        };
-
-        // Persist rule.
-        let route_enum = if route == "game" { AppRoute::Game } else { AppRoute::Chat };
-        self.update_config(|c| { c.app_routing.insert(app_name.clone(), route_enum); });
-
-        // Move all current streams for this app to the target sink.
-        for input in inputs.iter().filter(|s| s.app_name == app_name) {
-            crate::pipewire::move_sink_input(input.id, sink_name).await;
-        }
-
-        Ok(())
-    }
-
-    /// Return all saved app routing rules as Vec of (app_name, route).
-    async fn get_app_routes(&self) -> Vec<(String, String)> {
-        self.config_tx
-            .borrow()
-            .app_routing
-            .iter()
-            .map(|(k, v)| (k.clone(), v.as_str().to_owned()))
-            .collect()
-    }
-
-    /// Remove a saved app routing rule by app name.
-    async fn remove_app_route(&self, app_name: String) -> zbus::fdo::Result<()> {
-        self.update_config(|c| { c.app_routing.remove(&app_name); });
-        Ok(())
     }
 
     /// Emitted when the battery level changes.

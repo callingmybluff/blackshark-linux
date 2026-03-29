@@ -662,6 +662,7 @@ dependencies = [
  "anyhow",
  "blackshark-client",
  "futures-util",
+ "serde_json",
  "slint",
  "slint-build",
  "tokio",

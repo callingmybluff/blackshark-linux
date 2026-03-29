@@ -1,7 +1,6 @@
 mod config;
 mod dbus;
 mod hid_actor;
-mod pipewire;
 mod state;
 
 use std::time::Duration;
@@ -17,9 +16,8 @@ use zbus::ConnectionBuilder;
 use config::Config;
 use state::SharedState;
 
-const TICK_INTERVAL: Duration = Duration::from_secs(5);
+const TICK_INTERVAL:     Duration = Duration::from_secs(5);
 const DEBOUNCE_INTERVAL: Duration = Duration::from_millis(500);
-const ROUTING_INTERVAL: Duration = Duration::from_secs(3);
 const DBUS_PATH: &str = "/net/blackshark1/Headset";
 const DBUS_NAME: &str = "net.blackshark1";
 
@@ -48,11 +46,7 @@ async fn main() -> Result<()> {
     let (config_tx, mut config_rx) = watch::channel(initial_config.clone());
 
     let (cmd_tx, cmd_rx) = mpsc::channel::<hid_actor::HidCommand>(32);
-    let initial_state = SharedState {
-        game_chat_mix: initial_config.game_chat_mix,
-        ..SharedState::default()
-    };
-    let (state_tx, state_rx) = watch::channel(initial_state);
+    let (state_tx, state_rx) = watch::channel(SharedState::default());
 
     // Spawn HID actor. Pass initial config so it can restore on first connect.
     hid_actor::spawn(cmd_rx, state_tx.clone(), initial_config);
@@ -70,21 +64,17 @@ async fn main() -> Result<()> {
     });
 
     // Debounced config writer + apply-to-device task.
-    // Watches for config changes, waits 500ms of quiet, then saves to disk
-    // and tells the HID actor to apply the new values.
     let apply_tx = cmd_tx.clone();
     tokio::spawn(async move {
         loop {
             if config_rx.changed().await.is_err() {
                 break;
             }
-            // Debounce: wait for changes to settle.
             loop {
                 tokio::select! {
                     _ = tokio::time::sleep(DEBOUNCE_INTERVAL) => break,
                     res = config_rx.changed() => {
                         if res.is_err() { return; }
-                        // changed again — reset the timer
                     }
                 }
             }
@@ -108,93 +98,6 @@ async fn main() -> Result<()> {
         .await?;
 
     info!("running on {DBUS_NAME}");
-
-    // Manage PipeWire virtual sinks + loopbacks for game/chat mix.
-    // On connect: create null sinks and loopback each to the real headset output.
-    // On disconnect: tear them all down.
-    {
-        let mut sink_rx = state_rx.clone();
-        tokio::spawn(async move {
-            let mut modules: Vec<u32> = Vec::new();
-
-            async fn setup(modules: &mut Vec<u32>, mix: u8) {
-                pipewire::cleanup_stale_sinks().await;
-                let Some(headset_sink) = pipewire::find_headset_sink().await else {
-                    warn!("could not find headset sink — game/chat mix unavailable");
-                    return;
-                };
-                info!("routing game/chat mix through {headset_sink}");
-
-                for (name, desc) in [
-                    ("blackshark-game", "BlackShark-Game"),
-                    ("blackshark-chat", "BlackShark-Chat"),
-                ] {
-                    match pipewire::load_null_sink(name, desc).await {
-                        Ok(id) => modules.push(id),
-                        Err(e) => { warn!("failed to create {name} sink: {e}"); return; }
-                    }
-                    let monitor = format!("{name}.monitor");
-                    match pipewire::load_loopback(&monitor, &headset_sink).await {
-                        Ok(id) => modules.push(id),
-                        Err(e) => warn!("failed to create {name} loopback: {e}"),
-                    }
-                }
-
-                pipewire::apply_mix_volumes(mix).await;
-            }
-
-            async fn teardown(modules: &mut Vec<u32>) {
-                for id in modules.drain(..) {
-                    pipewire::unload_module(id).await;
-                }
-            }
-
-            // Handle case where headset is already connected at daemon startup.
-            {
-                let state = sink_rx.borrow_and_update().clone();
-                if state.connected {
-                    setup(&mut modules, state.game_chat_mix).await;
-                }
-            }
-
-            loop {
-                if sink_rx.changed().await.is_err() { break; }
-                let state = sink_rx.borrow_and_update().clone();
-
-                match (modules.is_empty(), state.connected) {
-                    (true, true)  => setup(&mut modules, state.game_chat_mix).await,
-                    (false, false) => teardown(&mut modules).await,
-                    _ => {}
-                }
-            }
-        });
-    }
-
-    // Auto-routing task: every 3 seconds, move any new sink-inputs that
-    // match a saved rule to their configured sink.
-    {
-        let state_rx = state_rx.clone();
-        let config_rx = config_tx.clone().subscribe();
-        tokio::spawn(async move {
-            let mut interval = tokio::time::interval(ROUTING_INTERVAL);
-            loop {
-                interval.tick().await;
-                if !state_rx.borrow().connected { continue; }
-                let cfg = config_rx.borrow().clone();
-                if cfg.app_routing.is_empty() { continue; }
-
-                let inputs = pipewire::list_sink_inputs().await;
-                for input in &inputs {
-                    let Some(rule) = cfg.app_routing.get(&input.app_name) else { continue };
-                    let target = rule.as_str();
-                    if input.route != target {
-                        let sink = format!("blackshark-{target}");
-                        pipewire::move_sink_input(input.id, &sink).await;
-                    }
-                }
-            }
-        });
-    }
 
     // Watch state changes and emit D-Bus signals + PropertiesChanged.
     let mut watch_rx = state_rx;
@@ -221,29 +124,25 @@ async fn main() -> Result<()> {
             }
 
             // Emit PropertiesChanged for any state that changed.
-            // This drives receive_*_changed() streams in proxy subscribers (tray, GUI).
             let mut changed: HashMap<&str, &Value<'_>> = HashMap::new();
-            // Build owned values first, then reference them
-            let v_connected   = Value::from(state.connected);
-            let v_battery     = Value::from(state.battery_pct);
-            let v_sidetone    = Value::from(state.sidetone);
-            let v_eq          = Value::from(state.eq_preset);
-            let v_thx         = Value::from(state.thx_enabled);
-            let v_anc         = Value::from(state.anc_enabled);
-            let v_anc_level   = Value::from(state.anc_level);
-            let v_ps          = Value::from(state.power_savings_minutes);
-            let v_mix         = Value::from(state.game_chat_mix);
-            if state.connected != prev.connected           { changed.insert("Connected",           &v_connected); }
-            if state.battery_pct != prev.battery_pct       { changed.insert("BatteryPercentage",    &v_battery); }
-            if state.sidetone != prev.sidetone             { changed.insert("Sidetone",             &v_sidetone); }
-            if state.eq_preset != prev.eq_preset           { changed.insert("EqPreset",             &v_eq); }
-            if state.thx_enabled != prev.thx_enabled       { changed.insert("ThxEnabled",           &v_thx); }
-            if state.anc_enabled != prev.anc_enabled       { changed.insert("AncEnabled",           &v_anc); }
-            if state.anc_level != prev.anc_level           { changed.insert("AncLevel",             &v_anc_level); }
+            let v_connected = Value::from(state.connected);
+            let v_battery   = Value::from(state.battery_pct);
+            let v_sidetone  = Value::from(state.sidetone);
+            let v_eq        = Value::from(state.eq_preset);
+            let v_thx       = Value::from(state.thx_enabled);
+            let v_anc       = Value::from(state.anc_enabled);
+            let v_anc_level = Value::from(state.anc_level);
+            let v_ps        = Value::from(state.power_savings_minutes);
+            if state.connected != prev.connected                   { changed.insert("Connected",          &v_connected); }
+            if state.battery_pct != prev.battery_pct               { changed.insert("BatteryPercentage",  &v_battery); }
+            if state.sidetone != prev.sidetone                     { changed.insert("Sidetone",           &v_sidetone); }
+            if state.eq_preset != prev.eq_preset                   { changed.insert("EqPreset",           &v_eq); }
+            if state.thx_enabled != prev.thx_enabled               { changed.insert("ThxEnabled",         &v_thx); }
+            if state.anc_enabled != prev.anc_enabled               { changed.insert("AncEnabled",         &v_anc); }
+            if state.anc_level != prev.anc_level                   { changed.insert("AncLevel",           &v_anc_level); }
             if state.power_savings_minutes != prev.power_savings_minutes {
                 changed.insert("PowerSavingsMinutes", &v_ps);
             }
-            if state.game_chat_mix != prev.game_chat_mix   { changed.insert("GameChatMix",          &v_mix); }
             if !changed.is_empty() {
                 Properties::properties_changed(
                     ctxt,

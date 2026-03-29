@@ -39,24 +39,6 @@ pub trait Headset {
     /// Returns (percentage, charging).
     fn get_battery(&self) -> zbus::Result<(u8, bool)>;
 
-    /// Set game/chat crossfader (0 = all chat, 50 = equal, 100 = all game).
-    fn set_game_chat_mix(&self, mix: u8) -> zbus::Result<()>;
-
-    /// List non-loopback sink-inputs currently playing.
-    /// Returns Vec of (sink_input_id, app_name, route) where route is
-    /// "game", "chat", or "" for unassigned.
-    async fn list_sink_inputs(&self) -> zbus::Result<Vec<(u32, String, String)>>;
-
-    /// Assign a sink-input's app to game or chat routing, persisting the rule.
-    /// route = "game", "chat", or "" to clear.
-    async fn set_sink_input_route(&self, sink_input_id: u32, route: &str) -> zbus::Result<()>;
-
-    /// Return all saved app routing rules as Vec of (app_name, route).
-    async fn get_app_routes(&self) -> zbus::Result<Vec<(String, String)>>;
-
-    /// Remove a saved app routing rule by app name.
-    async fn remove_app_route(&self, app_name: &str) -> zbus::Result<()>;
-
     /// Whether the headset is currently reachable.
     #[zbus(property)]
     fn connected(&self) -> zbus::Result<bool>;
@@ -83,9 +65,6 @@ pub trait Headset {
 
     #[zbus(property)]
     fn power_savings_minutes(&self) -> zbus::Result<u8>;
-
-    #[zbus(property)]
-    fn game_chat_mix(&self) -> zbus::Result<u8>;
 
     /// Emitted when the battery level changes.
     #[zbus(signal)]
