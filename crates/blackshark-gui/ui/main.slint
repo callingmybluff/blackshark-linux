@@ -400,23 +400,6 @@ component RoutingTab inherits ScrollView {
 }
 
 // ---------------------------------------------------------------------------
-// Stub tab
-// ---------------------------------------------------------------------------
-
-component StubTab inherits VerticalBox {
-    in property <string> name;
-    padding: 24px;
-    Text {
-        text: name + " — coming soon";
-        color: Palette.foreground;
-        font-size: 16px;
-        horizontal-alignment: center;
-        vertical-alignment: center;
-        vertical-stretch: 1;
-    }
-}
-
-// ---------------------------------------------------------------------------
 // Advanced tab
 // ---------------------------------------------------------------------------
 
@@ -598,9 +581,7 @@ export component MainWindow inherits Window {
                 TabButton { label: "Audio";      active: active-tab == 1; clicked => { active-tab = 1; } }
                 TabButton { label: "Mic";        active: active-tab == 2; clicked => { active-tab = 2; } }
                 TabButton { label: "Routing";    active: active-tab == 3; clicked => { active-tab = 3; } }
-                TabButton { label: "Automation"; active: active-tab == 4; clicked => { active-tab = 4; } }
-                TabButton { label: "Settings";   active: active-tab == 5; clicked => { active-tab = 5; } }
-                TabButton { label: "Advanced";   active: active-tab == 6; clicked => { active-tab = 6; } }
+                TabButton { label: "Advanced";   active: active-tab == 4; clicked => { active-tab = 4; } }
 
                 Rectangle { vertical-stretch: 1; }
             }
@@ -646,9 +627,7 @@ export component MainWindow inherits Window {
             set-game-chat-mix(m)   => { set-game-chat-mix(m); }
             horizontal-stretch: 1;
         }
-        if active-tab == 4: StubTab { name: "Automation"; horizontal-stretch: 1; }
-        if active-tab == 5: StubTab { name: "Settings";   horizontal-stretch: 1; }
-        if active-tab == 6: AdvancedTab {
+        if active-tab == 4: AdvancedTab {
             sinks-active:     sinks-active;
             daemon-status:    daemon-status;
             log-lines:        log-lines;
