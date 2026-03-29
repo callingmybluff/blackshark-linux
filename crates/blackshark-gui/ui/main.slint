@@ -192,7 +192,9 @@ component MicTab inherits VerticalBox {
 component AudioTab inherits VerticalBox {
     in property <bool> connected;
     in property <int>  eq-preset;
+    in property <int>  game-chat-mix;  // 0=all chat, 50=equal, 100=all game
     callback set-eq(int);
+    callback set-game-chat-mix(int);
 
     padding: 24px;
     spacing: 16px;
@@ -229,6 +231,40 @@ component AudioTab inherits VerticalBox {
                 color: Palette.foreground;
                 font-size: 11px;
                 wrap: word-wrap;
+            }
+        }
+    }
+
+    // Game / Chat mix
+    if connected: GroupBox {
+        title: "Game / Chat Mix";
+        VerticalBox {
+            spacing: 8px;
+            Text {
+                text: "Route game audio to 'BlackShark Game' and chat/voice to 'BlackShark Chat' in your system audio settings.";
+                color: Palette.foreground;
+                font-size: 11px;
+                wrap: word-wrap;
+            }
+            HorizontalBox {
+                spacing: 8px;
+                Text { text: "Chat"; color: Palette.foreground; vertical-alignment: center; }
+                Slider {
+                    minimum: 0;
+                    maximum: 100;
+                    value: game-chat-mix;
+                    step: 1;
+                    released(v) => { set-game-chat-mix(round(v)); }
+                    horizontal-stretch: 1;
+                }
+                Text { text: "Game"; color: Palette.foreground; vertical-alignment: center; }
+            }
+            Text {
+                text: game-chat-mix == 50 ? "Equal mix" :
+                      game-chat-mix < 50  ? "Chat favored" : "Game favored";
+                color: Palette.accent-background;
+                font-weight: 700;
+                horizontal-alignment: center;
             }
         }
     }
@@ -271,6 +307,7 @@ export component MainWindow inherits Window {
     in property <int>        battery-pct;
     in property <bool>       charging;
     in property <int>        eq-preset;
+    in property <int>        game-chat-mix;
     in property <int>        sidetone;
     in-out property <bool>   thx-enabled;
     in-out property <bool>   anc-enabled;
@@ -279,6 +316,7 @@ export component MainWindow inherits Window {
 
     // Callbacks → Rust
     callback set-eq(int);
+    callback set-game-chat-mix(int);
     callback set-sidetone(int);
     callback set-thx(bool);
     callback set-anc(bool, int);
@@ -339,9 +377,11 @@ export component MainWindow inherits Window {
             horizontal-stretch: 1;
         }
         if active-tab == 1: AudioTab {
-            connected: connected;
-            eq-preset: eq-preset;
-            set-eq(p) => { set-eq(p); }
+            connected:      connected;
+            eq-preset:      eq-preset;
+            game-chat-mix:  game-chat-mix;
+            set-eq(p)              => { set-eq(p); }
+            set-game-chat-mix(m)   => { set-game-chat-mix(m); }
             horizontal-stretch: 1;
         }
         if active-tab == 2: MicTab {

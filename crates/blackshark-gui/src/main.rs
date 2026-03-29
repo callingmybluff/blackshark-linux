@@ -21,6 +21,7 @@ async fn main() -> Result<()> {
             if connected {
                 window.set_battery_pct(proxy.battery_percentage().await.unwrap_or(0) as i32);
                 window.set_eq_preset(proxy.eq_preset().await.unwrap_or(0) as i32);
+                window.set_game_chat_mix(proxy.game_chat_mix().await.unwrap_or(50) as i32);
                 window.set_sidetone(proxy.sidetone().await.unwrap_or(0) as i32);
                 window.set_thx_enabled(proxy.thx_enabled().await.unwrap_or(false));
                 window.set_anc_enabled(proxy.anc_enabled().await.unwrap_or(false));
@@ -38,6 +39,18 @@ async fn main() -> Result<()> {
             tokio::spawn(async move {
                 if let Ok(proxy) = HeadsetProxy::new(&conn).await {
                     let _ = proxy.set_eq(preset as u8).await;
+                }
+            });
+        });
+    }
+
+    {
+        let conn = conn.clone();
+        window.on_set_game_chat_mix(move |mix| {
+            let conn = conn.clone();
+            tokio::spawn(async move {
+                if let Ok(proxy) = HeadsetProxy::new(&conn).await {
+                    let _ = proxy.set_game_chat_mix(mix as u8).await;
                 }
             });
         });
@@ -99,9 +112,10 @@ async fn main() -> Result<()> {
             use futures_util::StreamExt;
             let Ok(proxy) = HeadsetProxy::new(&conn).await else { return };
 
-            let mut battery_stream   = proxy.receive_battery_changed().await.ok();
-            let mut connected_stream = proxy.receive_connected_changed().await;
-            let mut eq_stream        = proxy.receive_eq_preset_changed().await;
+            let mut battery_stream    = proxy.receive_battery_changed().await.ok();
+            let mut connected_stream  = proxy.receive_connected_changed().await;
+            let mut eq_stream         = proxy.receive_eq_preset_changed().await;
+            let mut mix_stream        = proxy.receive_game_chat_mix_changed().await;
         let mut sidetone_stream  = proxy.receive_sidetone_changed().await;
             let mut thx_stream       = proxy.receive_thx_enabled_changed().await;
             let mut anc_stream       = proxy.receive_anc_enabled_changed().await;
@@ -136,6 +150,14 @@ async fn main() -> Result<()> {
                             let w = window_weak.clone();
                             slint::invoke_from_event_loop(move || {
                                 if let Some(win) = w.upgrade() { win.set_eq_preset(val as i32); }
+                            }).ok();
+                        }
+                    }
+                    Some(change) = mix_stream.next() => {
+                        if let Ok(val) = change.get().await {
+                            let w = window_weak.clone();
+                            slint::invoke_from_event_loop(move || {
+                                if let Some(win) = w.upgrade() { win.set_game_chat_mix(val as i32); }
                             }).ok();
                         }
                     }

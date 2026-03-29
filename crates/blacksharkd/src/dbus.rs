@@ -8,16 +8,18 @@ use crate::state::SharedState;
 pub struct HeadsetInterface {
     cmd_tx:    mpsc::Sender<HidCommand>,
     state_rx:  watch::Receiver<SharedState>,
+    state_tx:  watch::Sender<SharedState>,
     config_tx: watch::Sender<Config>,
 }
 
 impl HeadsetInterface {
     pub fn new(
-        cmd_tx: mpsc::Sender<HidCommand>,
-        state_rx: watch::Receiver<SharedState>,
+        cmd_tx:    mpsc::Sender<HidCommand>,
+        state_rx:  watch::Receiver<SharedState>,
+        state_tx:  watch::Sender<SharedState>,
         config_tx: watch::Sender<Config>,
     ) -> Self {
-        Self { cmd_tx, state_rx, config_tx }
+        Self { cmd_tx, state_rx, state_tx, config_tx }
     }
 
     async fn send_cmd<T>(
@@ -142,6 +144,22 @@ impl HeadsetInterface {
     #[zbus(property)]
     async fn power_savings_minutes(&self) -> u8 {
         self.state_rx.borrow().power_savings_minutes
+    }
+
+    /// Set game/chat crossfader (0 = all chat, 50 = equal, 100 = all game).
+    async fn set_game_chat_mix(&self, mix: u8) -> zbus::fdo::Result<()> {
+        if mix > 100 {
+            return Err(zbus::fdo::Error::InvalidArgs("mix must be 0–100".into()));
+        }
+        self.state_tx.send_modify(|s| s.game_chat_mix = mix);
+        self.update_config(|c| c.game_chat_mix = mix);
+        crate::pipewire::apply_mix_volumes(mix).await;
+        Ok(())
+    }
+
+    #[zbus(property)]
+    async fn game_chat_mix(&self) -> u8 {
+        self.state_rx.borrow().game_chat_mix
     }
 
     /// Emitted when the battery level changes.

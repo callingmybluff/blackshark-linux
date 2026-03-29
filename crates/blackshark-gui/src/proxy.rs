@@ -53,6 +53,12 @@ pub trait Headset {
     #[zbus(property)]
     fn power_savings_minutes(&self) -> zbus::Result<u8>;
 
+    /// Set game/chat crossfader (0 = all chat, 50 = equal, 100 = all game).
+    fn set_game_chat_mix(&self, mix: u8) -> zbus::Result<()>;
+
+    #[zbus(property)]
+    fn game_chat_mix(&self) -> zbus::Result<u8>;
+
     /// Emitted when the battery level changes.
     #[zbus(signal)]
     fn battery_changed(&self, percentage: u8, charging: bool) -> zbus::Result<()>;

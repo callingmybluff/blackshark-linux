@@ -16,6 +16,8 @@ pub struct Config {
     pub anc_enabled: bool,
     pub anc_level: u8,              // 1–4
     pub power_savings_minutes: u8,  // 0=off, 15/30/45/60
+    /// Game/chat crossfader: 0 = all chat, 50 = equal, 100 = all game.
+    pub game_chat_mix: u8,
 }
 
 impl Default for Config {
@@ -27,6 +29,7 @@ impl Default for Config {
             anc_enabled:            false,
             anc_level:              1,
             power_savings_minutes:  0,
+            game_chat_mix:          50,
         }
     }
 }

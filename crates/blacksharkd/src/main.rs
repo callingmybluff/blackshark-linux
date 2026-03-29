@@ -1,6 +1,7 @@
 mod config;
 mod dbus;
 mod hid_actor;
+mod pipewire;
 mod state;
 
 use std::time::Duration;
@@ -46,10 +47,14 @@ async fn main() -> Result<()> {
     let (config_tx, mut config_rx) = watch::channel(initial_config.clone());
 
     let (cmd_tx, cmd_rx) = mpsc::channel::<hid_actor::HidCommand>(32);
-    let (state_tx, state_rx) = watch::channel(SharedState::default());
+    let initial_state = SharedState {
+        game_chat_mix: initial_config.game_chat_mix,
+        ..SharedState::default()
+    };
+    let (state_tx, state_rx) = watch::channel(initial_state);
 
     // Spawn HID actor. Pass initial config so it can restore on first connect.
-    hid_actor::spawn(cmd_rx, state_tx, initial_config);
+    hid_actor::spawn(cmd_rx, state_tx.clone(), initial_config);
 
     // Periodic tick → drives reconnect attempts and battery polling.
     let tick_tx = cmd_tx.clone();
@@ -93,7 +98,7 @@ async fn main() -> Result<()> {
     });
 
     // D-Bus service.
-    let iface = dbus::HeadsetInterface::new(cmd_tx, state_rx.clone(), config_tx);
+    let iface = dbus::HeadsetInterface::new(cmd_tx, state_rx.clone(), state_tx.clone(), config_tx);
 
     let conn = ConnectionBuilder::session()?
         .name(DBUS_NAME)?
@@ -102,6 +107,66 @@ async fn main() -> Result<()> {
         .await?;
 
     info!("running on {DBUS_NAME}");
+
+    // Manage PipeWire virtual sinks + loopbacks for game/chat mix.
+    // On connect: create null sinks and loopback each to the real headset output.
+    // On disconnect: tear them all down.
+    {
+        let mut sink_rx = state_rx.clone();
+        tokio::spawn(async move {
+            let mut modules: Vec<u32> = Vec::new();
+
+            async fn setup(modules: &mut Vec<u32>, mix: u8) {
+                let Some(headset_sink) = pipewire::find_headset_sink().await else {
+                    warn!("could not find headset sink — game/chat mix unavailable");
+                    return;
+                };
+                info!("routing game/chat mix through {headset_sink}");
+
+                for (name, desc) in [
+                    ("blackshark-game", "BlackShark-Game"),
+                    ("blackshark-chat", "BlackShark-Chat"),
+                ] {
+                    match pipewire::load_null_sink(name, desc).await {
+                        Ok(id) => modules.push(id),
+                        Err(e) => { warn!("failed to create {name} sink: {e}"); return; }
+                    }
+                    let monitor = format!("{name}.monitor");
+                    match pipewire::load_loopback(&monitor, &headset_sink).await {
+                        Ok(id) => modules.push(id),
+                        Err(e) => warn!("failed to create {name} loopback: {e}"),
+                    }
+                }
+
+                pipewire::apply_mix_volumes(mix).await;
+            }
+
+            async fn teardown(modules: &mut Vec<u32>) {
+                for id in modules.drain(..) {
+                    pipewire::unload_module(id).await;
+                }
+            }
+
+            // Handle case where headset is already connected at daemon startup.
+            {
+                let state = sink_rx.borrow_and_update().clone();
+                if state.connected {
+                    setup(&mut modules, state.game_chat_mix).await;
+                }
+            }
+
+            loop {
+                if sink_rx.changed().await.is_err() { break; }
+                let state = sink_rx.borrow_and_update().clone();
+
+                match (modules.is_empty(), state.connected) {
+                    (true, true)  => setup(&mut modules, state.game_chat_mix).await,
+                    (false, false) => teardown(&mut modules).await,
+                    _ => {}
+                }
+            }
+        });
+    }
 
     // Watch state changes and emit D-Bus signals + PropertiesChanged.
     let mut watch_rx = state_rx;
@@ -139,6 +204,7 @@ async fn main() -> Result<()> {
             let v_anc         = Value::from(state.anc_enabled);
             let v_anc_level   = Value::from(state.anc_level);
             let v_ps          = Value::from(state.power_savings_minutes);
+            let v_mix         = Value::from(state.game_chat_mix);
             if state.connected != prev.connected           { changed.insert("Connected",           &v_connected); }
             if state.battery_pct != prev.battery_pct       { changed.insert("BatteryPercentage",    &v_battery); }
             if state.sidetone != prev.sidetone             { changed.insert("Sidetone",             &v_sidetone); }
@@ -149,6 +215,7 @@ async fn main() -> Result<()> {
             if state.power_savings_minutes != prev.power_savings_minutes {
                 changed.insert("PowerSavingsMinutes", &v_ps);
             }
+            if state.game_chat_mix != prev.game_chat_mix   { changed.insert("GameChatMix",          &v_mix); }
             if !changed.is_empty() {
                 Properties::properties_changed(
                     ctxt,

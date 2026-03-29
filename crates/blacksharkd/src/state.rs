@@ -1,4 +1,4 @@
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct SharedState {
     pub connected: bool,
     pub battery_pct: u8,
@@ -9,4 +9,23 @@ pub struct SharedState {
     pub anc_enabled: bool,
     pub anc_level: u8,
     pub power_savings_minutes: u8,
+    /// Game/chat crossfader: 0 = all chat, 50 = equal, 100 = all game.
+    pub game_chat_mix: u8,
+}
+
+impl Default for SharedState {
+    fn default() -> Self {
+        Self {
+            connected:             false,
+            battery_pct:           0,
+            charging:              false,
+            sidetone:              0,
+            eq_preset:             0,
+            thx_enabled:           false,
+            anc_enabled:           false,
+            anc_level:             1,
+            power_savings_minutes: 0,
+            game_chat_mix:         50,
+        }
+    }
 }
