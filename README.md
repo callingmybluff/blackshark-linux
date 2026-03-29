@@ -19,6 +19,12 @@ Controls sidetone, EQ presets, THX Spatial Audio, Active Noise Cancellation, and
 - **GUI** — full settings panel with live updates
 - **CLI** — scriptable control and JSON status output
 
+![Device tab showing battery, connection status and audio controls](assets/Device_page.png)
+*GUI settings panel — Device tab*
+
+![System tray menu with headset controls and daemon status](assets/tray_icon.png)
+*System tray with quick-access controls*
+
 ---
 
 ## Requirements
@@ -86,14 +92,6 @@ blackshark-gui
 ```
 
 Full settings panel. All changes are applied immediately via D-Bus and sync back to the tray and CLI in real time. The Advanced tab has daemon controls, a live log viewer, and an opt-in toggle for the experimental PipeWire game/chat mix feature.
-
----
-
-## Screenshots
-
-![Device tab](assets/Device_page.png)
-
-![System tray](assets/tray_icon.png)
 
 ---
 
