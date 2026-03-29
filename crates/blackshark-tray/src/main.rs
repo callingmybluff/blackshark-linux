@@ -5,7 +5,7 @@ use blackshark_client::{EQ_PRESET_NAMES, HeadsetProxy};
 use ksni::{self, menu::*, Icon, Tray};
 use zbus::Connection;
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 struct HeadsetState {
     connected:     bool,
     battery_pct:   u8,
@@ -16,6 +16,24 @@ struct HeadsetState {
     anc_enabled:   bool,
     anc_level:     u8,
     power_savings: u8,
+    daemon_status: String,
+}
+
+impl Default for HeadsetState {
+    fn default() -> Self {
+        Self {
+            connected:     false,
+            battery_pct:   0,
+            charging:      false,
+            eq_preset:     0,
+            sidetone:      0,
+            thx_enabled:   false,
+            anc_enabled:   false,
+            anc_level:     0,
+            power_savings: 0,
+            daemon_status: "unknown".into(),
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -222,16 +240,25 @@ impl Tray for BlacksharkTray {
             items.push(MenuItem::Separator);
         }
 
+        let daemon_status = s.daemon_status.clone();
         items.push(MenuItem::SubMenu(SubMenu {
-            label:   "Daemon".into(),
+            label:   format!("Daemon: {daemon_status}"),
             submenu: vec![
+                MenuItem::Standard(StandardItem {
+                    label:   format!("Status: {daemon_status}"),
+                    enabled: false,
+                    ..Default::default()
+                }),
+                MenuItem::Separator,
                 MenuItem::Standard(StandardItem {
                     label:    "Start".into(),
                     activate: Box::new(|tray: &mut Self| {
-                        tray.rt.spawn(async {
+                        let state = tray.state.clone();
+                        tray.rt.spawn(async move {
                             let _ = tokio::process::Command::new("systemctl")
                                 .args(["--user", "start", "blacksharkd"])
                                 .status().await;
+                            state.lock().unwrap().daemon_status = fetch_daemon_status().await;
                         });
                     }),
                     ..Default::default()
@@ -239,10 +266,12 @@ impl Tray for BlacksharkTray {
                 MenuItem::Standard(StandardItem {
                     label:    "Stop".into(),
                     activate: Box::new(|tray: &mut Self| {
-                        tray.rt.spawn(async {
+                        let state = tray.state.clone();
+                        tray.rt.spawn(async move {
                             let _ = tokio::process::Command::new("systemctl")
                                 .args(["--user", "stop", "blacksharkd"])
                                 .status().await;
+                            state.lock().unwrap().daemon_status = fetch_daemon_status().await;
                         });
                     }),
                     ..Default::default()
@@ -250,10 +279,12 @@ impl Tray for BlacksharkTray {
                 MenuItem::Standard(StandardItem {
                     label:    "Restart".into(),
                     activate: Box::new(|tray: &mut Self| {
-                        tray.rt.spawn(async {
+                        let state = tray.state.clone();
+                        tray.rt.spawn(async move {
                             let _ = tokio::process::Command::new("systemctl")
                                 .args(["--user", "restart", "blacksharkd"])
                                 .status().await;
+                            state.lock().unwrap().daemon_status = fetch_daemon_status().await;
                         });
                     }),
                     ..Default::default()
@@ -272,6 +303,17 @@ impl Tray for BlacksharkTray {
     }
 }
 
+async fn fetch_daemon_status() -> String {
+    let out = tokio::process::Command::new("systemctl")
+        .args(["--user", "is-active", "blacksharkd"])
+        .output()
+        .await;
+    match out {
+        Ok(o) => String::from_utf8(o.stdout).unwrap_or_default().trim().to_owned(),
+        Err(_) => "unknown".to_owned(),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
@@ -280,6 +322,9 @@ impl Tray for BlacksharkTray {
 async fn main() -> Result<()> {
     let conn  = Connection::session().await?;
     let state = Arc::new(Mutex::new(HeadsetState::default()));
+
+    // Load initial daemon status.
+    state.lock().unwrap().daemon_status = fetch_daemon_status().await;
 
     // Load initial state from daemon
     if let Ok(proxy) = HeadsetProxy::new(&conn).await {
@@ -298,7 +343,7 @@ async fn main() -> Result<()> {
         }
     }
 
-    // Build tray service and get handle before spawning
+    // Build tray service and get handle before spawning.
     let service = ksni::TrayService::new(BlacksharkTray {
         state: state.clone(),
         conn:  conn.clone(),
@@ -306,6 +351,21 @@ async fn main() -> Result<()> {
     });
     let handle = service.handle();
     service.spawn();
+
+    // Poll daemon status every 5s so it stays current.
+    {
+        let state3  = state.clone();
+        let handle3 = handle.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
+            loop {
+                interval.tick().await;
+                let status = fetch_daemon_status().await;
+                state3.lock().unwrap().daemon_status = status;
+                handle3.update(|_| {});
+            }
+        });
+    }
 
     // Watch D-Bus signals and update tray state
     let state2 = state.clone();

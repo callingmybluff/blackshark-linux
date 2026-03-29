@@ -130,6 +130,22 @@ async fn main() -> Result<()> {
     // Initial daemon status.
     window.set_daemon_status(daemon_status().await.into());
 
+    // Poll daemon status every 5s so the Advanced tab stays current.
+    {
+        let window_weak = window.as_weak();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
+            loop {
+                interval.tick().await;
+                let status = daemon_status().await;
+                let w = window_weak.clone();
+                slint::invoke_from_event_loop(move || {
+                    if let Some(win) = w.upgrade() { win.set_daemon_status(status.into()); }
+                }).ok();
+            }
+        });
+    }
+
     // Tail daemon logs in the background.
     {
         let log_buffer: Arc<Mutex<VecDeque<String>>> = Arc::new(Mutex::new(VecDeque::new()));
