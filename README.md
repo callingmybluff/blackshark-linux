@@ -34,6 +34,10 @@ Controls sidetone, EQ presets, THX Spatial Audio, Active Noise Cancellation, and
 - systemd (user session)
 - PipeWire or PulseAudio (optional — only needed for the experimental game/chat mix feature)
 
+> **Firmware note:** Firmware 1.3.x or later is required on both the headset and dongle.
+> Users on 1.2.x have reported the daemon sees the dongle but cannot communicate with the headset.
+> Update firmware via Razer Synapse on Windows before switching to Linux. (See [#1](https://github.com/RiskRunner0/blackshark-linux/issues/1))
+
 ---
 
 ## Quick install
