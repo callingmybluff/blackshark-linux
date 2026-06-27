@@ -1,3 +1,5 @@
-# Razer BlackShark V3 Pro — grant access to the HID interface without root.
-# The daemon (blacksharkd) opens /dev/hidraw* directly via hidapi.
+# Razer BlackShark V3 Pro (PC and Xbox editions) — grant access to the HID
+# interface without root. The daemon (blacksharkd) opens /dev/hidraw* directly
+# via hidapi.
 SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1532", ATTRS{idProduct}=="0577", MODE="0660", GROUP="users"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1532", ATTRS{idProduct}=="0a55", MODE="0660", GROUP="users"

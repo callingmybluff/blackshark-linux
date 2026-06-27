@@ -5,7 +5,13 @@ use tracing::info;
 use blackshark_protocol::{Report, ResponseStatus, REPORT_LEN};
 
 const VID: u16 = 0x1532;
-const PID: u16 = 0x0577;
+
+/// Product IDs for the dongle, covering both the PC and Xbox editions —
+/// they share the same proprietary HID protocol.
+const PIDS: &[u16] = &[
+    0x0577, // BlackShark V3 Pro
+    0x0a55, // BlackShark V3 Pro for Xbox
+];
 
 /// Open the BlackShark V3 Pro HID device.
 ///
@@ -17,7 +23,7 @@ pub fn open() -> Result<HidDevice> {
 
     let mut target = None;
     for info in api.device_list() {
-        if info.vendor_id() == VID && info.product_id() == PID {
+        if info.vendor_id() == VID && PIDS.contains(&info.product_id()) {
             let path = info.path().to_string_lossy();
             info!(
                 interface = info.interface_number(),
@@ -31,7 +37,7 @@ pub fn open() -> Result<HidDevice> {
     }
 
     match target {
-        None => bail!("BlackShark V3 Pro not found — is the dongle plugged in and do you have udev permission?"),
+        None => bail!("BlackShark V3 Pro (or Xbox edition) not found — is the dongle plugged in and do you have udev permission?"),
         Some(info) => {
             let path = info.path().to_string_lossy().into_owned();
             let dev = info
